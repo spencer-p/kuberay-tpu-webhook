@@ -63,6 +63,7 @@ type TPUWebhookServer struct {
 	// podLister is used to query Pods from an informer cache.
 	podLister    listersv1.PodLister
 	cacheMutex   sync.Mutex
+	stateMu      sync.Mutex
 	wg           sync.WaitGroup
 	waiting      int
 	lastAdmitted string
@@ -812,14 +813,17 @@ func (t *TPUWebhookServer) mutatePod(admissionReview *admissionv1.AdmissionRevie
 	} else {
 		// Fallback for older KubeRay versions that do not set K8s index labels.
 		// Wait for PodInformer cache to update from previous requests or timeout.
-		if waitTimeout(&t.wg, time.Second*1) {
-			klog.V(1).Info("MutatePod", "PodInformer AddFunc called for prior admission request")
-		} else {
-			klog.V(1).Info("MutatePod", "Timed out waiting for PodInformer AddFunc")
+		t.stateMu.Lock()
+		numWaiting := t.waiting
+		t.stateMu.Unlock()
+
+		if numWaiting > 0 {
+			if waitTimeout(&t.wg, time.Second*1) {
+				klog.V(0).Info("MutatePod", "PodInformer AddFunc called for prior admission request")
+			} else {
+				klog.V(0).Info("MutatePod", "Timed out waiting for PodInformer AddFunc")
+			}
 		}
-		// Add 1 to the WaitGroup to represent the pending Pod to the cache
-		defer t.wg.Add(1)
-		t.waiting += 1
 
 		// query k8s client to populate sliceToTPUHosts
 		sliceToTPUHosts, err := t.getSliceToTPUHosts(clusterName, groupName, namespace, numOfHosts)
@@ -835,7 +839,12 @@ func (t *TPUWebhookServer) mutatePod(admissionReview *admissionv1.AdmissionRevie
 		}
 
 		// Update state for next request
+		t.stateMu.Lock()
 		t.lastAdmitted = fmt.Sprintf("%s-%s-%s-%d-%d", namespace, clusterName, groupName, replicaIndex, tpuWorkerID)
+		// Add 1 to the WaitGroup to represent the pending Pod to the cache
+		t.wg.Add(1)
+		t.waiting += 1
+		t.stateMu.Unlock()
 
 		// Manually inject the replicaIndex label
 		injectReplicaLabel(clusterName, namespace, replicaIndex, groupName, &patches)
@@ -1076,7 +1085,8 @@ func init() {
 	klog.InitFlags(nil)
 }
 
-// isLastAdmittedPod returns True if Pod matches the last Pod admitted by the webhook server
+// isLastAdmittedPod returns True if Pod matches the last Pod admitted by the webhook server.
+// It assumes the caller holds stateMu if needed.
 func (t *TPUWebhookServer) isLastAdmittedPod(pod *corev1.Pod) (bool, error) {
 	if pod.Spec.Containers == nil || !containerRequestingTPUs(pod.Spec.Containers...) {
 		// Pod does not use TPUs
@@ -1115,6 +1125,9 @@ func (t *TPUWebhookServer) isLastAdmittedPod(pod *corev1.Pod) (bool, error) {
 func (t *TPUWebhookServer) addPod(obj interface{}) {
 	pod := obj.(*corev1.Pod)
 	klog.V(1).InfoS("addPod", "Pod", pod.Namespace+"/"+pod.Name, "Time", time.Now())
+
+	t.stateMu.Lock()
+	defer t.stateMu.Unlock()
 
 	if t.lastAdmitted == "" {
 		// There is not a pending TPU worker Pod to the informer cache, unblock if waiting and return
