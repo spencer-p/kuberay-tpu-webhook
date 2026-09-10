@@ -483,8 +483,9 @@ func makeLabelSelectorRequirement(key string, op metav1.LabelSelectorOperator, v
 }
 
 // getGKETopologyKey returns the first GKE topology key found in the Pod's affinity,
-// defaulting to the nodepool key if none are found.
+// or the Kueue TAS required topology annotation if present, defaulting to the nodepool key.
 func getGKETopologyKey(pod *corev1.Pod) string {
+	// Use explicit user-configured podAffinity if present.
 	if pod.Spec.Affinity != nil && pod.Spec.Affinity.PodAffinity != nil {
 		for _, term := range pod.Spec.Affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution {
 			if strings.HasPrefix(term.TopologyKey, gkeLabelPrefix) {
@@ -492,6 +493,15 @@ func getGKETopologyKey(pod *corev1.Pod) string {
 			}
 		}
 	}
+
+	// Adopt Kueue TAS / Dynamic Slicing required topology if set.
+	if pod.Annotations != nil {
+		if reqTopology, ok := pod.Annotations[kueuev1beta2.PodSetRequiredTopologyAnnotation]; ok && strings.HasPrefix(reqTopology, gkeLabelPrefix) {
+			return reqTopology
+		}
+	}
+
+	// Use GKE label mapping one pod set to a node pool by default.
 	return gkeNodePoolLabel
 }
 

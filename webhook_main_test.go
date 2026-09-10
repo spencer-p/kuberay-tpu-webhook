@@ -2356,6 +2356,26 @@ func Test_mutatePod_DynamicSlicing_SkipsSubsliceAffinityInjection(t *testing.T) 
 	assert.NoError(t, err)
 	assert.NotNil(t, admissionResponse)
 	assert.True(t, admissionResponse.Allowed)
+
+	// Verify that injected affinity uses the Kueue TAS topology key instead of defaulting to nodepool
+	var patches []patch
+	err = json.Unmarshal(admissionResponse.Patch, &patches)
+	assert.NoError(t, err)
+	var foundAffinity bool
+	for _, p := range patches {
+		if p["path"] == "/spec/affinity" {
+			foundAffinity = true
+			affinityBytes, err := json.Marshal(p["value"])
+			assert.NoError(t, err)
+			var affinity corev1.Affinity
+			err = json.Unmarshal(affinityBytes, &affinity)
+			assert.NoError(t, err)
+			assert.Equal(t, gceTopologyBlockLabel, affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution[0].TopologyKey)
+			assert.Equal(t, gceTopologyBlockLabel, affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution[0].TopologyKey)
+			assert.Equal(t, gceTopologyBlockLabel, affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution[1].TopologyKey)
+		}
+	}
+	assert.True(t, foundAffinity, "Expected affinity patch to be injected with the Kueue TAS topology key")
 }
 
 func Test_GenerateHeadlessServiceName(t *testing.T) {
