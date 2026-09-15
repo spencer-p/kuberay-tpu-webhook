@@ -483,7 +483,7 @@ func makeLabelSelectorRequirement(key string, op metav1.LabelSelectorOperator, v
 }
 
 // getGKETopologyKey returns the first GKE topology key found in the Pod's affinity,
-// or the Kueue TAS required topology annotation if present, defaulting to the nodepool key.
+// defaulting to the nodepool key if none are found.
 func getGKETopologyKey(pod *corev1.Pod) string {
 	// Use explicit user-configured podAffinity if present.
 	if pod.Spec.Affinity != nil && pod.Spec.Affinity.PodAffinity != nil {
@@ -494,13 +494,6 @@ func getGKETopologyKey(pod *corev1.Pod) string {
 		}
 	}
 
-	// Adopt Kueue TAS / Dynamic Slicing required topology if set.
-	if pod.Annotations != nil {
-		if reqTopology, ok := pod.Annotations[kueuev1beta2.PodSetRequiredTopologyAnnotation]; ok && strings.HasPrefix(reqTopology, gkeLabelPrefix) {
-			return reqTopology
-		}
-	}
-
 	// Use GKE label mapping one pod set to a node pool by default.
 	return gkeNodePoolLabel
 }
@@ -508,6 +501,13 @@ func getGKETopologyKey(pod *corev1.Pod) string {
 // injectAffinity injects pod affinity and anti-affinity scheduling constraints using replicaIndex and cluster labels
 // to ensure TPU Pods from the same multi-host replica are co-located.
 func (t *TPUWebhookServer) injectAffinity(pod *corev1.Pod, replicaIndex int, numOfHosts int, workerGroupName string, patches *[]patch) error {
+	// Skip affinity and anti-affinity injection if the pod is managed by Kueue or Dynamic Slicing.
+	// Kueue TAS handles placement and assigns exact hostnames, so injecting synthetic affinity
+	// rules interferes with TAS bin-packing and multi-worker-group architectures.
+	if isDynamicSlicingOrKueueManaged(pod.Labels, pod.Annotations) {
+		return nil
+	}
+
 	clusterName := pod.Labels[utils.RayClusterLabelKey]
 	topologyKey := getGKETopologyKey(pod)
 

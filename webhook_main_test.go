@@ -2357,25 +2357,15 @@ func Test_mutatePod_DynamicSlicing_SkipsSubsliceAffinityInjection(t *testing.T) 
 	assert.NotNil(t, admissionResponse)
 	assert.True(t, admissionResponse.Allowed)
 
-	// Verify that injected affinity uses the Kueue TAS topology key instead of defaulting to nodepool
+	// Verify that no affinity patch is injected when Dynamic Slicing / Kueue is used
 	var patches []patch
-	err = json.Unmarshal(admissionResponse.Patch, &patches)
-	assert.NoError(t, err)
-	var foundAffinity bool
-	for _, p := range patches {
-		if p["path"] == "/spec/affinity" {
-			foundAffinity = true
-			affinityBytes, err := json.Marshal(p["value"])
-			assert.NoError(t, err)
-			var affinity corev1.Affinity
-			err = json.Unmarshal(affinityBytes, &affinity)
-			assert.NoError(t, err)
-			assert.Equal(t, gceTopologyBlockLabel, affinity.PodAffinity.RequiredDuringSchedulingIgnoredDuringExecution[0].TopologyKey)
-			assert.Equal(t, gceTopologyBlockLabel, affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution[0].TopologyKey)
-			assert.Equal(t, gceTopologyBlockLabel, affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution[1].TopologyKey)
+	if len(admissionResponse.Patch) > 0 {
+		err = json.Unmarshal(admissionResponse.Patch, &patches)
+		assert.NoError(t, err)
+		for _, p := range patches {
+			assert.NotEqual(t, "/spec/affinity", p["path"], "Expected /spec/affinity patch to be skipped for Kueue/Dynamic Slicing managed pod")
 		}
 	}
-	assert.True(t, foundAffinity, "Expected affinity patch to be injected with the Kueue TAS topology key")
 }
 
 func Test_GenerateHeadlessServiceName(t *testing.T) {
