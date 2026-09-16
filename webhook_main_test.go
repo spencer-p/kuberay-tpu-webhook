@@ -2371,87 +2371,66 @@ func Test_mutatePod_DynamicSlicing_SkipsSubsliceAffinityInjection(t *testing.T) 
 func Test_isDynamicSlicingOrKueueManaged(t *testing.T) {
 	tests := []struct {
 		name        string
-		labels      map[string]string
 		annotations map[string]string
 		expected    bool
 	}{
 		{
 			name:        "nil maps",
-			labels:      nil,
 			annotations: nil,
 			expected:    false,
 		},
 		{
-			name: "plain queue label without TAS annotations does not bypass",
-			labels: map[string]string{
-				kueueconstants.QueueLabel: "test-queue",
-			},
+			name:        "no annotations does not bypass",
 			annotations: nil,
 			expected:    false,
 		},
 		{
-			name:   "podset-required-topology annotation bypasses",
-			labels: nil,
+			name: "podset-required-topology annotation bypasses",
 			annotations: map[string]string{
 				kueuev1beta2.PodSetRequiredTopologyAnnotation: "cloud.google.com/gke-tpu-partition-2x2x2-id",
 			},
 			expected: true,
 		},
 		{
-			name:   "podset-slice-required-topology annotation bypasses",
-			labels: nil,
+			name: "podset-slice-required-topology annotation bypasses",
 			annotations: map[string]string{
 				kueuev1beta2.PodSetSliceRequiredTopologyAnnotation: "cloud.google.com/gke-tpu-partition-4x4x4-id",
 			},
 			expected: true,
 		},
 		{
-			name:   "podset-slice-required-topology-constraints annotation bypasses",
-			labels: nil,
+			name: "podset-slice-required-topology-constraints annotation bypasses",
 			annotations: map[string]string{
 				kueuev1beta2.PodSetSliceRequiredTopologyConstraintsAnnotation: `[{"topologyLevel":"cloud.google.com/gke-tpu-partition-4x4x4-id","sliceSize":16}]`,
 			},
 			expected: true,
 		},
 		{
-			name:   "podset-preferred-topology annotation bypasses",
-			labels: nil,
+			name: "podset-preferred-topology annotation bypasses",
 			annotations: map[string]string{
 				kueuev1beta2.PodSetPreferredTopologyAnnotation: "cloud.google.com/gce-topology-block",
 			},
 			expected: true,
 		},
 		{
-			name:   "skip-tpu-webhook-check=true bypasses",
-			labels: nil,
+			name: "skip-tpu-webhook-check=true bypasses",
 			annotations: map[string]string{
 				skipTPUWebhookCheckAnnotation: "true",
 			},
 			expected: true,
 		},
 		{
-			name:   "skip-tpu-webhook-check=false does not bypass",
-			labels: nil,
+			name: "skip-tpu-webhook-check=false does not bypass",
 			annotations: map[string]string{
 				skipTPUWebhookCheckAnnotation: "false",
 			},
 			expected: false,
 		},
-		{
-			name: "queue label with TAS annotation bypasses",
-			labels: map[string]string{
-				kueueconstants.QueueLabel: "test-queue",
-			},
-			annotations: map[string]string{
-				kueuev1beta2.PodSetRequiredTopologyAnnotation: "cloud.google.com/gce-topology-block",
-			},
-			expected: true,
-		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			actual := isDynamicSlicingOrKueueManaged(tc.labels, tc.annotations)
+			actual := isDynamicSlicingOrKueueManaged(tc.annotations)
 			assert.Equal(t, tc.expected, actual)
 		})
 	}

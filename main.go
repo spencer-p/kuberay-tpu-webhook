@@ -107,7 +107,7 @@ const (
 
 // isDynamicSlicingOrKueueManaged returns true if the object has Kueue TAS annotations
 // or explicitly requests bypassing the webhook check.
-func isDynamicSlicingOrKueueManaged(labels, annotations map[string]string) bool {
+func isDynamicSlicingOrKueueManaged(annotations map[string]string) bool {
 	if annotations != nil {
 		if annotations[kueuev1beta2.PodSetRequiredTopologyAnnotation] != "" ||
 			annotations[kueuev1beta2.PodSetPreferredTopologyAnnotation] != "" ||
@@ -504,7 +504,7 @@ func (t *TPUWebhookServer) injectAffinity(pod *corev1.Pod, replicaIndex int, num
 	// Skip affinity and anti-affinity injection if the pod is managed by Kueue or Dynamic Slicing.
 	// Kueue TAS handles placement and assigns exact hostnames, so injecting synthetic affinity
 	// rules interferes with TAS bin-packing and multi-worker-group architectures.
-	if isDynamicSlicingOrKueueManaged(pod.Labels, pod.Annotations) {
+	if isDynamicSlicingOrKueueManaged(pod.Annotations) {
 		return nil
 	}
 
@@ -514,7 +514,7 @@ func (t *TPUWebhookServer) injectAffinity(pod *corev1.Pod, replicaIndex int, num
 	// If the current topology key is the default nodepool, attempt to discover a more specific one (block/subblock).
 	// Skip if the pod is managed by Kueue or Dynamic Slicing.
 	_, subsliceRequested := pod.Annotations[tpuSubsliceTopologyAnnotation]
-	subsliceWithKueue := isDynamicSlicingOrKueueManaged(pod.Labels, pod.Annotations)
+	subsliceWithKueue := isDynamicSlicingOrKueueManaged(pod.Annotations)
 	if subsliceRequested && !subsliceWithKueue {
 		selector := labels.SelectorFromSet(pod.Spec.NodeSelector)
 		nodes, err := t.nodeLister.List(selector)
@@ -716,8 +716,8 @@ func (t *TPUWebhookServer) validateRayCluster(admissionReview *admissionv1.Admis
 		// If sub-slicing is requested, ensure we can find a satisfying topology key.
 		// Skip if the cluster or worker group is managed by Kueue or Dynamic Slicing.
 		desiredSubslice, subsliceRequested := workerGroupSpec.Template.Annotations[tpuSubsliceTopologyAnnotation]
-		clusterSubsliceWithKueue := isDynamicSlicingOrKueueManaged(raycluster.Labels, workerGroupSpec.Template.Annotations)
-		workerGroupSubsliceWithKueue := isDynamicSlicingOrKueueManaged(workerGroupSpec.Template.Labels, workerGroupSpec.Template.Annotations)
+		clusterSubsliceWithKueue := isDynamicSlicingOrKueueManaged(workerGroupSpec.Template.Annotations)
+		workerGroupSubsliceWithKueue := isDynamicSlicingOrKueueManaged(workerGroupSpec.Template.Annotations)
 		if subsliceRequested && !(clusterSubsliceWithKueue || workerGroupSubsliceWithKueue) {
 			warning, admitErr, err := t.checkSubsliceAffinity(workerGroupSpec, desiredSubslice)
 			if err != nil {
