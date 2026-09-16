@@ -50,7 +50,6 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	kueuev1beta2 "sigs.k8s.io/kueue/apis/kueue/v1beta2"
-	kueueconstants "sigs.k8s.io/kueue/pkg/controller/constants"
 )
 
 // slice represents a TPU Pod Slice.
@@ -106,14 +105,15 @@ const (
 	skipTPUWebhookCheckAnnotation = gkeLabelPrefix + "skip-tpu-webhook-check"
 )
 
-// isDynamicSlicingOrKueueManaged returns true if the object has Kueue queue/TAS annotations
+// isDynamicSlicingOrKueueManaged returns true if the object has Kueue TAS annotations
 // or explicitly requests bypassing the webhook check.
 func isDynamicSlicingOrKueueManaged(labels, annotations map[string]string) bool {
-	if labels != nil && labels[kueueconstants.QueueLabel] != "" {
-		return true
-	}
 	if annotations != nil {
-		if annotations[kueuev1beta2.PodSetRequiredTopologyAnnotation] != "" || annotations[skipTPUWebhookCheckAnnotation] == "true" {
+		if annotations[kueuev1beta2.PodSetRequiredTopologyAnnotation] != "" ||
+			annotations[kueuev1beta2.PodSetPreferredTopologyAnnotation] != "" ||
+			annotations[kueuev1beta2.PodSetSliceRequiredTopologyAnnotation] != "" ||
+			annotations[kueuev1beta2.PodSetSliceRequiredTopologyConstraintsAnnotation] != "" ||
+			annotations[skipTPUWebhookCheckAnnotation] == "true" {
 			return true
 		}
 	}
